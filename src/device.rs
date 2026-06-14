@@ -3,6 +3,8 @@ use std::{ffi::CString, fmt};
 pub const RAZER_VID: u16 = 0x1532;
 pub const MOUSE_USAGE_PAGE: u16 = 0x0001;
 pub const MOUSE_USAGE: u16 = 0x0002;
+pub const OPENRAZER_DEFAULT_INTERFACE: i32 = 0;
+pub const OPENRAZER_INTERFACE_3: i32 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RazerDeviceDefinition {
@@ -12,6 +14,7 @@ pub struct RazerDeviceDefinition {
     pub transaction_id: u8,
     pub usage_page: Option<u16>,
     pub usage: Option<u16>,
+    pub preferred_interface_number: Option<i32>,
     pub supports_battery: bool,
     pub supports_charging: bool,
 }
@@ -21,6 +24,7 @@ pub struct RazerHidCandidate {
     pub name: String,
     pub vid: u16,
     pub pid: u16,
+    pub interface_number: Option<i32>,
     pub usage_page: Option<u16>,
     pub usage: Option<u16>,
     pub path: Option<CString>,
@@ -33,6 +37,7 @@ impl fmt::Debug for RazerHidCandidate {
             .field("name", &self.name)
             .field("vid", &self.vid)
             .field("pid", &self.pid)
+            .field("interface_number", &self.interface_number)
             .field("usage_page", &self.usage_page)
             .field("usage", &self.usage)
             .field("path", &self.path.as_ref().map(|_| "<hidden>"))
@@ -42,6 +47,7 @@ impl fmt::Debug for RazerHidCandidate {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RazerHidUsage {
+    pub interface_number: Option<i32>,
     pub usage_page: Option<u16>,
     pub usage: Option<u16>,
 }
@@ -55,6 +61,14 @@ pub struct RazerHidDeviceSummary {
 }
 
 const fn mouse(pid: u16, name: &'static str) -> RazerDeviceDefinition {
+    mouse_with_interface(pid, name, OPENRAZER_DEFAULT_INTERFACE)
+}
+
+const fn mouse_with_interface(
+    pid: u16,
+    name: &'static str,
+    preferred_interface_number: i32,
+) -> RazerDeviceDefinition {
     RazerDeviceDefinition {
         vid: RAZER_VID,
         pid,
@@ -62,6 +76,7 @@ const fn mouse(pid: u16, name: &'static str) -> RazerDeviceDefinition {
         transaction_id: 0xFF,
         usage_page: Some(MOUSE_USAGE_PAGE),
         usage: Some(MOUSE_USAGE),
+        preferred_interface_number: Some(preferred_interface_number),
         supports_battery: false,
         supports_charging: false,
     }
@@ -73,6 +88,22 @@ const fn battery_mouse(
     transaction_id: u8,
     supports_charging: bool,
 ) -> RazerDeviceDefinition {
+    battery_mouse_with_interface(
+        pid,
+        name,
+        transaction_id,
+        OPENRAZER_DEFAULT_INTERFACE,
+        supports_charging,
+    )
+}
+
+const fn battery_mouse_with_interface(
+    pid: u16,
+    name: &'static str,
+    transaction_id: u8,
+    preferred_interface_number: i32,
+    supports_charging: bool,
+) -> RazerDeviceDefinition {
     RazerDeviceDefinition {
         vid: RAZER_VID,
         pid,
@@ -80,6 +111,7 @@ const fn battery_mouse(
         transaction_id,
         usage_page: Some(MOUSE_USAGE_PAGE),
         usage: Some(MOUSE_USAGE),
+        preferred_interface_number: Some(preferred_interface_number),
         supports_battery: true,
         supports_charging,
     }
@@ -159,9 +191,9 @@ pub const DEVICES: &[RazerDeviceDefinition] = &[
     mouse(0x0091, "Razer Viper 8KHz"),
     battery_mouse(0x0094, "Razer Orochi V2 (Receiver)", 0x1F, false),
     battery_mouse(0x0095, "Razer Orochi V2 (Bluetooth)", 0x1F, false),
-    mouse(0x0096, "Razer Naga X"),
+    mouse_with_interface(0x0096, "Razer Naga X", OPENRAZER_INTERFACE_3),
     mouse(0x0098, "Razer DeathAdder Essential (2021)"),
-    mouse(0x0099, "Razer Basilisk V3"),
+    mouse_with_interface(0x0099, "Razer Basilisk V3", OPENRAZER_INTERFACE_3),
     battery_mouse(0x009A, "Razer Pro Click Mini (Receiver)", 0x1F, true),
     battery_mouse(0x009C, "Razer DeathAdder V2 X HyperSpeed", 0x1F, false),
     battery_mouse(
@@ -218,7 +250,13 @@ pub const DEVICES: &[RazerDeviceDefinition] = &[
         0x1F,
         true,
     ),
-    battery_mouse(0x00CB, "Razer Basilisk V3 35K", 0x1F, false),
+    battery_mouse_with_interface(
+        0x00CB,
+        "Razer Basilisk V3 35K",
+        0x1F,
+        OPENRAZER_INTERFACE_3,
+        false,
+    ),
     battery_mouse(0x00CC, "Razer Basilisk V3 Pro 35K (Wired)", 0x1F, true),
     battery_mouse(0x00CD, "Razer Basilisk V3 Pro 35K (Wireless)", 0x1F, true),
     battery_mouse(0x00D0, "Razer Pro Click V2 (Wired)", 0x1F, true),
@@ -261,6 +299,7 @@ pub fn summarize_hid_candidates(candidates: &[RazerHidCandidate]) -> Vec<RazerHi
     for candidate in candidates {
         let name = display_name_for_candidate(candidate).to_string();
         let usage = RazerHidUsage {
+            interface_number: candidate.interface_number,
             usage_page: candidate.usage_page,
             usage: candidate.usage,
         };
@@ -299,21 +338,65 @@ pub fn summarize_hid_candidates(candidates: &[RazerHidCandidate]) -> Vec<RazerHi
 pub fn select_supported_device(
     candidates: &[RazerHidCandidate],
 ) -> Option<(&RazerHidCandidate, &'static RazerDeviceDefinition)> {
-    candidates.iter().find_map(|candidate| {
-        let definition = known_device(candidate.vid, candidate.pid)?;
+    ranked_supported_battery_candidates(candidates)
+        .into_iter()
+        .next()
+}
 
-        if !definition.supports_battery {
-            return None;
-        }
+pub fn ranked_supported_battery_candidates(
+    candidates: &[RazerHidCandidate],
+) -> Vec<(&RazerHidCandidate, &'static RazerDeviceDefinition)> {
+    let mut supported = candidates
+        .iter()
+        .filter_map(|candidate| {
+            let definition = known_device(candidate.vid, candidate.pid)?;
 
-        if definition.usage_page.is_some() && definition.usage_page != candidate.usage_page {
-            return None;
-        }
+            if !definition.supports_battery {
+                return None;
+            }
 
-        if definition.usage.is_some() && definition.usage != candidate.usage {
-            return None;
-        }
+            Some((candidate, definition))
+        })
+        .collect::<Vec<_>>();
 
-        Some((candidate, definition))
-    })
+    supported.sort_by_key(|(candidate, definition)| selection_priority(candidate, definition));
+
+    supported
+}
+
+fn selection_priority(
+    candidate: &RazerHidCandidate,
+    definition: &RazerDeviceDefinition,
+) -> (u8, u8, i32, u16, u16) {
+    (
+        interface_priority(candidate, definition),
+        usage_priority(candidate, definition),
+        candidate.interface_number.unwrap_or(i32::MAX),
+        candidate.usage_page.unwrap_or(u16::MAX),
+        candidate.usage.unwrap_or(u16::MAX),
+    )
+}
+
+fn interface_priority(candidate: &RazerHidCandidate, definition: &RazerDeviceDefinition) -> u8 {
+    match (
+        definition.preferred_interface_number,
+        candidate.interface_number,
+    ) {
+        (Some(preferred), Some(actual)) if preferred == actual => 0,
+        (Some(_), None) => 1,
+        (Some(_), Some(_)) => 2,
+        (None, _) => 1,
+    }
+}
+
+fn usage_priority(candidate: &RazerHidCandidate, definition: &RazerDeviceDefinition) -> u8 {
+    if definition.usage_page == candidate.usage_page && definition.usage == candidate.usage {
+        0
+    } else if definition.usage_page == candidate.usage_page {
+        1
+    } else if candidate.usage_page == Some(MOUSE_USAGE_PAGE) {
+        2
+    } else {
+        3
+    }
 }

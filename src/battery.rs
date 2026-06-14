@@ -1,5 +1,8 @@
 use crate::{
-    device::{RazerDeviceDefinition, RazerHidCandidate, display_name_for_candidate, known_device},
+    device::{
+        RazerDeviceDefinition, RazerHidCandidate, display_name_for_candidate, known_device,
+        ranked_supported_battery_candidates,
+    },
     error::AppError,
     hid::RazerHidTransport,
     protocol::{
@@ -48,10 +51,10 @@ pub fn probe_battery() -> Result<BatterySnapshot, AppError> {
     let mut unsupported_razer_seen = false;
     let mut last_error = None;
 
-    for (candidate, definition) in supported_battery_candidates(&candidates) {
+    for (candidate, definition) in ranked_supported_battery_candidates(&candidates) {
         match probe_candidate(&transport, candidate, definition) {
             Ok(snapshot) => return Ok(snapshot),
-            Err(error @ AppError::DeviceBusy) => return Err(error),
+            Err(error @ AppError::DeviceBusy) => last_error = Some(error),
             Err(error @ AppError::UnsupportedDevice) => last_error = Some(error),
             Err(error @ AppError::AccessDenied) => last_error = Some(error),
             Err(error @ AppError::HidTransport) => last_error = Some(error),
@@ -81,28 +84,6 @@ pub fn probe_battery() -> Result<BatterySnapshot, AppError> {
     } else {
         Err(AppError::NoDevice)
     }
-}
-
-fn supported_battery_candidates(
-    candidates: &[RazerHidCandidate],
-) -> impl Iterator<Item = (&RazerHidCandidate, &'static RazerDeviceDefinition)> {
-    candidates.iter().filter_map(|candidate| {
-        let definition = known_device(candidate.vid, candidate.pid)?;
-
-        if !definition.supports_battery {
-            return None;
-        }
-
-        if definition.usage_page.is_some() && definition.usage_page != candidate.usage_page {
-            return None;
-        }
-
-        if definition.usage.is_some() && definition.usage != candidate.usage {
-            return None;
-        }
-
-        Some((candidate, definition))
-    })
 }
 
 fn probe_candidate(

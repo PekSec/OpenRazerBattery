@@ -46,6 +46,7 @@ impl RazerHidTransport {
         candidates.sort_by(|left, right| {
             left.pid
                 .cmp(&right.pid)
+                .then(left.interface_number.cmp(&right.interface_number))
                 .then(left.usage_page.cmp(&right.usage_page))
                 .then(left.usage.cmp(&right.usage))
                 .then(left.name.cmp(&right.name))
@@ -118,6 +119,7 @@ fn candidate_from_device_info(device: &DeviceInfo) -> RazerHidCandidate {
         name,
         vid,
         pid,
+        interface_number: Some(device.interface_number()),
         usage_page: Some(device.usage_page()),
         usage: Some(device.usage()),
         path: Some(device.path().to_owned()),

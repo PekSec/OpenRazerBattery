@@ -77,7 +77,11 @@ fn format_optional_hex(value: Option<u16>) -> String {
 
 fn format_usage(usage: &RazerHidUsage) -> String {
     format!(
-        "UsagePage: {}, Usage: {}",
+        "Interface: {}, UsagePage: {}, Usage: {}",
+        usage
+            .interface_number
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "unknown".to_string()),
         format_optional_hex(usage.usage_page),
         format_optional_hex(usage.usage)
     )

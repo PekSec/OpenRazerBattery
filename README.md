@@ -38,8 +38,8 @@ Running without arguments will dispatch to `tray` mode.
 
 ## Current Status
 
-- `list` enumerates Razer HID candidates and matches known mouse PIDs from
-  OpenRazer's device list.
+- `list` enumerates Razer HID candidates, including HID interface numbers and
+  usages, and matches known mouse PIDs from OpenRazer's device list.
 - `probe` opens the supported HID interface and reads battery percentage.
 - `tray` prints a placeholder tray-mode message.
 - Protocol constants, checksum helpers, report construction, device catalog
