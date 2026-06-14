@@ -1,3 +1,5 @@
+use std::{ffi::CString, fmt};
+
 pub const RAZER_VID: u16 = 0x1532;
 pub const MOUSE_USAGE_PAGE: u16 = 0x0001;
 pub const MOUSE_USAGE: u16 = 0x0002;
@@ -14,13 +16,28 @@ pub struct RazerDeviceDefinition {
     pub supports_charging: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct RazerHidCandidate {
     pub name: String,
     pub vid: u16,
     pub pid: u16,
     pub usage_page: Option<u16>,
     pub usage: Option<u16>,
+    pub path: Option<CString>,
+}
+
+impl fmt::Debug for RazerHidCandidate {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RazerHidCandidate")
+            .field("name", &self.name)
+            .field("vid", &self.vid)
+            .field("pid", &self.pid)
+            .field("usage_page", &self.usage_page)
+            .field("usage", &self.usage)
+            .field("path", &self.path.as_ref().map(|_| "<hidden>"))
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

@@ -68,6 +68,7 @@ fn known_device_name_overrides_hid_product_string_for_display() {
         pid: 0x00B7,
         usage_page: Some(MOUSE_USAGE_PAGE),
         usage: Some(MOUSE_USAGE),
+        path: None,
     };
 
     assert_eq!(
@@ -85,6 +86,7 @@ fn summaries_group_distinct_hid_interfaces_for_one_device() {
             pid: 0x00AB,
             usage_page: Some(0x0001),
             usage: Some(0x0002),
+            path: None,
         },
         RazerHidCandidate {
             name: "USB Receiver".to_string(),
@@ -92,6 +94,7 @@ fn summaries_group_distinct_hid_interfaces_for_one_device() {
             pid: 0x00AB,
             usage_page: Some(0x000C),
             usage: Some(0x0001),
+            path: None,
         },
         RazerHidCandidate {
             name: "USB Receiver".to_string(),
@@ -99,6 +102,7 @@ fn summaries_group_distinct_hid_interfaces_for_one_device() {
             pid: 0x00AB,
             usage_page: Some(0x0001),
             usage: Some(0x0002),
+            path: None,
         },
     ];
 

@@ -4,8 +4,10 @@ use razer_bat::{
     error::AppError,
     protocol::{
         CMD_CLASS_POWER, CMD_GET_BATTERY, INDEX_CHECKSUM, INDEX_COMMAND_CLASS, INDEX_COMMAND_ID,
-        RAZER_REPORT_LEN, WINDOWS_FEATURE_REPORT_LEN, build_get_battery_report, calculate_checksum,
-        set_checksum, to_windows_feature_report, validate_response,
+        INDEX_POWER_VALUE, INDEX_STATUS, RAZER_REPORT_LEN, STATUS_BUSY, STATUS_SUCCESS,
+        WINDOWS_FEATURE_REPORT_LEN, build_get_battery_report, calculate_checksum,
+        from_windows_feature_report, parse_battery_raw, parse_charging, set_checksum,
+        to_windows_feature_report, validate_response,
     },
 };
 
@@ -62,7 +64,7 @@ fn parser_rejects_invalid_length() {
 
 #[test]
 fn parser_rejects_invalid_checksum() {
-    let mut report = build_get_battery_report(0x1F);
+    let mut report = successful_battery_response(0x80);
     report[INDEX_CHECKSUM] ^= 0x01;
 
     assert_eq!(
@@ -73,7 +75,7 @@ fn parser_rejects_invalid_checksum() {
 
 #[test]
 fn parser_rejects_wrong_command_class() {
-    let mut report = build_get_battery_report(0x1F);
+    let mut report = successful_battery_response(0x80);
     report[INDEX_COMMAND_CLASS] = 0x99;
     set_checksum(&mut report).unwrap();
 
@@ -85,13 +87,52 @@ fn parser_rejects_wrong_command_class() {
 
 #[test]
 fn parser_rejects_wrong_command_id() {
-    let mut report = build_get_battery_report(0x1F);
+    let mut report = successful_battery_response(0x80);
     report[INDEX_COMMAND_ID] = 0x99;
     set_checksum(&mut report).unwrap();
 
     assert_eq!(
         validate_response(&report, CMD_CLASS_POWER, CMD_GET_BATTERY),
         Err(AppError::UnexpectedResponse)
+    );
+}
+
+#[test]
+fn parser_rejects_busy_status() {
+    let mut report = successful_battery_response(0x80);
+    report[INDEX_STATUS] = STATUS_BUSY;
+    set_checksum(&mut report).unwrap();
+
+    assert_eq!(
+        validate_response(&report, CMD_CLASS_POWER, CMD_GET_BATTERY),
+        Err(AppError::DeviceBusy)
+    );
+}
+
+#[test]
+fn parser_extracts_battery_raw_from_arg_one() {
+    let report = successful_battery_response(0x80);
+
+    assert_eq!(parse_battery_raw(&report).unwrap(), 0x80);
+}
+
+#[test]
+fn parser_extracts_charging_state_from_arg_one() {
+    let mut report = successful_battery_response(0x01);
+    report[INDEX_COMMAND_ID] = razer_bat::protocol::CMD_GET_CHARGING;
+    set_checksum(&mut report).unwrap();
+
+    assert!(parse_charging(&report).unwrap());
+}
+
+#[test]
+fn windows_feature_report_round_trips_report_id_prefix() {
+    let report = successful_battery_response(0x80);
+    let feature_report = to_windows_feature_report(&report);
+
+    assert_eq!(
+        from_windows_feature_report(&feature_report).unwrap(),
+        report
     );
 }
 
@@ -111,6 +152,7 @@ fn device_selector_prefers_known_supported_devices() {
             pid: 0xFFFF,
             usage_page: Some(0x0001),
             usage: Some(0x0002),
+            path: None,
         },
         RazerHidCandidate {
             name: "Razer DeathAdder V3 Pro Wireless".to_string(),
@@ -118,10 +160,19 @@ fn device_selector_prefers_known_supported_devices() {
             pid: 0x00B7,
             usage_page: Some(0x0001),
             usage: Some(0x0002),
+            path: None,
         },
     ];
 
     let (_, definition) = select_supported_device(&candidates).unwrap();
 
     assert_eq!(definition.pid, 0x00B7);
+}
+
+fn successful_battery_response(raw_value: u8) -> [u8; RAZER_REPORT_LEN] {
+    let mut report = build_get_battery_report(0x1F);
+    report[INDEX_STATUS] = STATUS_SUCCESS;
+    report[INDEX_POWER_VALUE] = raw_value;
+    set_checksum(&mut report).unwrap();
+    report
 }

@@ -1,5 +1,5 @@
 use crate::{
-    battery::{BatteryStatus, unavailable_snapshot},
+    battery::probe_battery,
     device::{RazerHidUsage, known_device, summarize_hid_candidates},
     error::AppError,
     hid,
@@ -51,11 +51,20 @@ pub fn run_list() -> Result<(), AppError> {
 }
 
 pub fn run_probe() -> Result<(), AppError> {
-    let snapshot = unavailable_snapshot(BatteryStatus::DeviceNotFound);
+    let snapshot = probe_battery()?;
 
-    println!("Battery probe is not implemented in this scaffold.");
-    println!("Status: {:?}", snapshot.status);
-    println!("Run `razer-bat.exe list` to show detected Razer HID devices.");
+    println!("Device: {}", snapshot.device_name);
+
+    match snapshot.percentage {
+        Some(percentage) => println!("Battery: {percentage}%"),
+        None => println!("Battery: unavailable"),
+    }
+
+    match snapshot.charging {
+        Some(true) => println!("Charging: yes"),
+        Some(false) => println!("Charging: no"),
+        None => println!("Charging: unknown"),
+    }
 
     Ok(())
 }

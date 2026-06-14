@@ -8,11 +8,20 @@ pub const CMD_CLASS_POWER: u8 = 0x07;
 pub const CMD_GET_BATTERY: u8 = 0x80;
 pub const CMD_GET_CHARGING: u8 = 0x84;
 
+pub const STATUS_NEW_COMMAND: u8 = 0x00;
+pub const STATUS_BUSY: u8 = 0x01;
+pub const STATUS_SUCCESS: u8 = 0x02;
+pub const STATUS_FAILURE: u8 = 0x03;
+pub const STATUS_TIMEOUT: u8 = 0x04;
+pub const STATUS_NOT_SUPPORTED: u8 = 0x05;
+
+pub const INDEX_STATUS: usize = 0;
 pub const INDEX_TRANSACTION_ID: usize = 1;
 pub const INDEX_DATA_SIZE: usize = 5;
 pub const INDEX_COMMAND_CLASS: usize = 6;
 pub const INDEX_COMMAND_ID: usize = 7;
 pub const INDEX_ARGUMENTS_START: usize = 8;
+pub const INDEX_POWER_VALUE: usize = INDEX_ARGUMENTS_START + 1;
 pub const INDEX_CHECKSUM: usize = 88;
 
 const CHECKSUM_START: usize = 2;
@@ -28,6 +37,7 @@ pub fn build_get_charging_report(transaction_id: u8) -> [u8; RAZER_REPORT_LEN] {
 
 pub fn build_power_report(transaction_id: u8, command_id: u8) -> [u8; RAZER_REPORT_LEN] {
     let mut report = [0; RAZER_REPORT_LEN];
+    report[INDEX_STATUS] = STATUS_NEW_COMMAND;
     report[INDEX_TRANSACTION_ID] = transaction_id;
     report[INDEX_DATA_SIZE] = 0x02;
     report[INDEX_COMMAND_CLASS] = CMD_CLASS_POWER;
@@ -43,6 +53,18 @@ pub fn to_windows_feature_report(
     buffer[0] = REPORT_ID;
     buffer[1..].copy_from_slice(report);
     buffer
+}
+
+pub fn from_windows_feature_report(
+    feature_report: &[u8; WINDOWS_FEATURE_REPORT_LEN],
+) -> Result<[u8; RAZER_REPORT_LEN], AppError> {
+    if feature_report[0] != REPORT_ID {
+        return Err(AppError::UnexpectedResponse);
+    }
+
+    let mut report = [0; RAZER_REPORT_LEN];
+    report.copy_from_slice(&feature_report[1..]);
+    Ok(report)
 }
 
 pub fn calculate_checksum(report: &[u8]) -> Result<u8, AppError> {
@@ -81,6 +103,14 @@ pub fn validate_response(
         return Err(AppError::InvalidChecksum);
     }
 
+    match report[INDEX_STATUS] {
+        STATUS_SUCCESS => {}
+        STATUS_BUSY => return Err(AppError::DeviceBusy),
+        STATUS_NOT_SUPPORTED => return Err(AppError::UnsupportedDevice),
+        STATUS_FAILURE | STATUS_TIMEOUT => return Err(AppError::UnexpectedResponse),
+        _ => return Err(AppError::UnexpectedResponse),
+    }
+
     if report[INDEX_COMMAND_CLASS] != expected_command_class {
         return Err(AppError::UnexpectedResponse);
     }
@@ -90,4 +120,14 @@ pub fn validate_response(
     }
 
     Ok(())
+}
+
+pub fn parse_battery_raw(report: &[u8]) -> Result<u8, AppError> {
+    validate_response(report, CMD_CLASS_POWER, CMD_GET_BATTERY)?;
+    Ok(report[INDEX_POWER_VALUE])
+}
+
+pub fn parse_charging(report: &[u8]) -> Result<bool, AppError> {
+    validate_response(report, CMD_CLASS_POWER, CMD_GET_CHARGING)?;
+    Ok(report[INDEX_POWER_VALUE] != 0)
 }

@@ -3,11 +3,10 @@
 A lightweight Windows tray utility for displaying wireless Razer mouse battery
 status without running Razer Synapse.
 
-This repository is currently at the initial Rust scaffold stage. The crate uses
-Rust 2024 with a minimum supported Rust version of 1.85, builds as a single
-binary, exposes the planned module layout, enumerates local Razer HID
-candidates, and includes hardware-free protocol tests. Battery probing and tray
-integration are still to be implemented.
+This repository is currently in early development. The crate uses Rust 2024
+with a minimum supported Rust version of 1.85, builds as a single binary,
+enumerates local Razer HID candidates, and can probe battery state for supported
+OpenRazer-backed mouse entries. Tray integration is still to be implemented.
 
 ## Toolchain
 
@@ -41,7 +40,7 @@ Running without arguments will dispatch to `tray` mode.
 
 - `list` enumerates Razer HID candidates and matches known mouse PIDs from
   OpenRazer's device list.
-- `probe` prints a placeholder battery-probe message.
+- `probe` opens the supported HID interface and reads battery percentage.
 - `tray` prints a placeholder tray-mode message.
 - Protocol constants, checksum helpers, report construction, device catalog
   matching, and battery conversion are present and covered by tests.
