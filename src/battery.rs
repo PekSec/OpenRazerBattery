@@ -1,7 +1,7 @@
 use crate::{
     device::{RazerDeviceDefinition, RazerHidCandidate, display_name_for_candidate, known_device},
     error::AppError,
-    hid::{enumerate_razer_hid_candidates, open_candidate},
+    hid::RazerHidTransport,
     protocol::{
         build_get_battery_report, build_get_charging_report, parse_battery_raw, parse_charging,
     },
@@ -43,12 +43,13 @@ pub fn unavailable_snapshot(status: BatteryStatus) -> BatterySnapshot {
 }
 
 pub fn probe_battery() -> Result<BatterySnapshot, AppError> {
-    let candidates = enumerate_razer_hid_candidates()?;
+    let transport = RazerHidTransport::new()?;
+    let candidates = transport.enumerate_razer_hid_candidates()?;
     let mut unsupported_razer_seen = false;
     let mut last_error = None;
 
     for (candidate, definition) in supported_battery_candidates(&candidates) {
-        match probe_candidate(candidate, definition) {
+        match probe_candidate(&transport, candidate, definition) {
             Ok(snapshot) => return Ok(snapshot),
             Err(error @ AppError::DeviceBusy) => return Err(error),
             Err(error @ AppError::UnsupportedDevice) => last_error = Some(error),
@@ -105,10 +106,11 @@ fn supported_battery_candidates(
 }
 
 fn probe_candidate(
+    transport: &RazerHidTransport,
     candidate: &RazerHidCandidate,
     definition: &RazerDeviceDefinition,
 ) -> Result<BatterySnapshot, AppError> {
-    let device = open_candidate(candidate)?;
+    let device = transport.open_candidate(candidate)?;
     let battery_request = build_get_battery_report(definition.transaction_id);
     let battery_response = device.query_feature_report(&battery_request)?;
     let raw_battery = parse_battery_raw(&battery_response)?;
