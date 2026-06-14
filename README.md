@@ -6,7 +6,7 @@ status without running Razer Synapse.
 This repository is currently in early development. The crate uses Rust 2024
 with a minimum supported Rust version of 1.85, builds as a single binary,
 enumerates local Razer HID candidates, and can probe battery state for supported
-OpenRazer-backed mouse entries. Tray integration is still to be implemented.
+OpenRazer-backed mouse entries. Tray mode now runs as a native Win32 tray app.
 
 ## Toolchain
 
@@ -41,7 +41,9 @@ Running without arguments will dispatch to `tray` mode.
 - `list` enumerates Razer HID candidates, including HID interface numbers and
   usages, and matches known mouse PIDs from OpenRazer's device list.
 - `probe` opens the supported HID interface and reads battery percentage.
-- `tray` prints a placeholder tray-mode message.
+- `tray` starts a hidden Win32 message window, registers a tray icon, polls
+  battery immediately and every 60 seconds, shows a native right-click menu
+  with Refresh and Exit, and backs off polling on repeated failures.
 - Protocol constants, checksum helpers, report construction, device catalog
   matching, and battery conversion are present and covered by tests.
 

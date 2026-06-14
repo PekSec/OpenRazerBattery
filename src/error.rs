@@ -11,6 +11,7 @@ pub enum AppError {
     InvalidChecksum,
     UnexpectedResponse,
     HidTransport,
+    Tray,
 }
 
 impl AppError {
@@ -25,6 +26,7 @@ impl AppError {
                 "Battery query failed."
             }
             Self::HidTransport => "HID transport failed.",
+            Self::Tray => "Tray initialization failed.",
         }
     }
 }
