@@ -7,6 +7,8 @@ pub const REPORT_ID: u8 = 0x00;
 pub const CMD_CLASS_POWER: u8 = 0x07;
 pub const CMD_GET_BATTERY: u8 = 0x80;
 pub const CMD_GET_CHARGING: u8 = 0x84;
+pub const POWER_REPORT_DATA_SIZE: u8 = 0x02;
+pub const PROTOCOL_TYPE: u8 = 0x00;
 
 pub const STATUS_NEW_COMMAND: u8 = 0x00;
 pub const STATUS_BUSY: u8 = 0x01;
@@ -17,11 +19,16 @@ pub const STATUS_NOT_SUPPORTED: u8 = 0x05;
 
 pub const INDEX_STATUS: usize = 0;
 pub const INDEX_TRANSACTION_ID: usize = 1;
+pub const INDEX_REMAINING_PACKETS_MSB: usize = 2;
+pub const INDEX_REMAINING_PACKETS_LSB: usize = 3;
+pub const INDEX_PROTOCOL_TYPE: usize = 4;
 pub const INDEX_DATA_SIZE: usize = 5;
 pub const INDEX_COMMAND_CLASS: usize = 6;
 pub const INDEX_COMMAND_ID: usize = 7;
 pub const INDEX_ARGUMENTS_START: usize = 8;
-pub const INDEX_POWER_VALUE: usize = INDEX_ARGUMENTS_START + 1;
+pub const INDEX_ARGUMENT_0: usize = INDEX_ARGUMENTS_START;
+pub const INDEX_ARGUMENT_1: usize = INDEX_ARGUMENTS_START + 1;
+pub const INDEX_POWER_VALUE: usize = INDEX_ARGUMENT_1;
 pub const INDEX_CHECKSUM: usize = 88;
 
 const CHECKSUM_START: usize = 2;
@@ -39,7 +46,8 @@ pub fn build_power_report(transaction_id: u8, command_id: u8) -> [u8; RAZER_REPO
     let mut report = [0; RAZER_REPORT_LEN];
     report[INDEX_STATUS] = STATUS_NEW_COMMAND;
     report[INDEX_TRANSACTION_ID] = transaction_id;
-    report[INDEX_DATA_SIZE] = 0x02;
+    report[INDEX_PROTOCOL_TYPE] = PROTOCOL_TYPE;
+    report[INDEX_DATA_SIZE] = POWER_REPORT_DATA_SIZE;
     report[INDEX_COMMAND_CLASS] = CMD_CLASS_POWER;
     report[INDEX_COMMAND_ID] = command_id;
     report[INDEX_CHECKSUM] = checksum_for_report(&report);
@@ -122,12 +130,17 @@ pub fn validate_response(
     Ok(())
 }
 
+pub fn validate_power_response(report: &[u8], expected_command_id: u8) -> Result<(), AppError> {
+    validate_response(report, CMD_CLASS_POWER, expected_command_id)?;
+    Ok(())
+}
+
 pub fn parse_battery_raw(report: &[u8]) -> Result<u8, AppError> {
-    validate_response(report, CMD_CLASS_POWER, CMD_GET_BATTERY)?;
+    validate_power_response(report, CMD_GET_BATTERY)?;
     Ok(report[INDEX_POWER_VALUE])
 }
 
 pub fn parse_charging(report: &[u8]) -> Result<bool, AppError> {
-    validate_response(report, CMD_CLASS_POWER, CMD_GET_CHARGING)?;
+    validate_power_response(report, CMD_GET_CHARGING)?;
     Ok(report[INDEX_POWER_VALUE] != 0)
 }
