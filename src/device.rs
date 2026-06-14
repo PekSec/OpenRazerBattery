@@ -23,6 +23,20 @@ pub struct RazerHidCandidate {
     pub usage: Option<u16>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct RazerHidUsage {
+    pub usage_page: Option<u16>,
+    pub usage: Option<u16>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RazerHidDeviceSummary {
+    pub name: String,
+    pub vid: u16,
+    pub pid: u16,
+    pub usages: Vec<RazerHidUsage>,
+}
+
 const fn mouse(pid: u16, name: &'static str) -> RazerDeviceDefinition {
     RazerDeviceDefinition {
         vid: RAZER_VID,
@@ -222,6 +236,47 @@ pub fn display_name_for_candidate(candidate: &RazerHidCandidate) -> &str {
     known_device(candidate.vid, candidate.pid)
         .map(|device| device.name)
         .unwrap_or(candidate.name.as_str())
+}
+
+pub fn summarize_hid_candidates(candidates: &[RazerHidCandidate]) -> Vec<RazerHidDeviceSummary> {
+    let mut summaries = Vec::new();
+
+    for candidate in candidates {
+        let name = display_name_for_candidate(candidate).to_string();
+        let usage = RazerHidUsage {
+            usage_page: candidate.usage_page,
+            usage: candidate.usage,
+        };
+
+        if let Some(summary) = summaries
+            .iter_mut()
+            .find(|summary: &&mut RazerHidDeviceSummary| {
+                summary.vid == candidate.vid && summary.pid == candidate.pid && summary.name == name
+            })
+        {
+            summary.usages.push(usage);
+        } else {
+            summaries.push(RazerHidDeviceSummary {
+                name,
+                vid: candidate.vid,
+                pid: candidate.pid,
+                usages: vec![usage],
+            });
+        }
+    }
+
+    for summary in &mut summaries {
+        summary.usages.sort();
+        summary.usages.dedup();
+    }
+
+    summaries.sort_by(|left, right| {
+        left.pid
+            .cmp(&right.pid)
+            .then(left.name.cmp(&right.name))
+            .then(left.vid.cmp(&right.vid))
+    });
+    summaries
 }
 
 pub fn select_supported_device(

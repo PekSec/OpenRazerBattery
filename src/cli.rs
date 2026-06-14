@@ -1,6 +1,6 @@
 use crate::{
     battery::{BatteryStatus, unavailable_snapshot},
-    device::{display_name_for_candidate, known_device},
+    device::{RazerHidUsage, known_device, summarize_hid_candidates},
     error::AppError,
     hid,
 };
@@ -16,15 +16,15 @@ pub fn run_list() -> Result<(), AppError> {
         return Ok(());
     }
 
-    for (index, candidate) in candidates.iter().enumerate() {
-        let definition = known_device(candidate.vid, candidate.pid);
+    let summaries = summarize_hid_candidates(&candidates);
+
+    for (index, summary) in summaries.iter().enumerate() {
+        let definition = known_device(summary.vid, summary.pid);
 
         println!("[{}]", index + 1);
-        println!("Name: {}", display_name_for_candidate(candidate));
-        println!("VID: 0x{:04X}", candidate.vid);
-        println!("PID: 0x{:04X}", candidate.pid);
-        println!("UsagePage: {}", format_optional_hex(candidate.usage_page));
-        println!("Usage: {}", format_optional_hex(candidate.usage));
+        println!("Name: {}", summary.name);
+        println!("VID: 0x{:04X}", summary.vid);
+        println!("PID: 0x{:04X}", summary.pid);
         println!("Known: {}", yes_no(definition.is_some()));
         println!(
             "Battery: {}",
@@ -38,6 +38,12 @@ pub fn run_list() -> Result<(), AppError> {
                 .map(|device| support_text(device.supports_charging))
                 .unwrap_or("unknown")
         );
+        println!("Interfaces: {}", summary.usages.len());
+
+        for usage in &summary.usages {
+            println!("  {}", format_usage(usage));
+        }
+
         println!();
     }
 
@@ -58,6 +64,14 @@ fn format_optional_hex(value: Option<u16>) -> String {
     value
         .map(|value| format!("0x{value:04X}"))
         .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn format_usage(usage: &RazerHidUsage) -> String {
+    format!(
+        "UsagePage: {}, Usage: {}",
+        format_optional_hex(usage.usage_page),
+        format_optional_hex(usage.usage)
+    )
 }
 
 fn yes_no(value: bool) -> &'static str {

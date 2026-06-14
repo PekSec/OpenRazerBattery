@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use razer_bat::device::{
     DEVICES, MOUSE_USAGE, MOUSE_USAGE_PAGE, RAZER_VID, RazerHidCandidate,
-    display_name_for_candidate, known_device,
+    display_name_for_candidate, known_device, summarize_hid_candidates,
 };
 
 #[test]
@@ -74,4 +74,38 @@ fn known_device_name_overrides_hid_product_string_for_display() {
         display_name_for_candidate(&candidate),
         "Razer DeathAdder V3 Pro (Wireless)"
     );
+}
+
+#[test]
+fn summaries_group_distinct_hid_interfaces_for_one_device() {
+    let candidates = vec![
+        RazerHidCandidate {
+            name: "USB Receiver".to_string(),
+            vid: RAZER_VID,
+            pid: 0x00AB,
+            usage_page: Some(0x0001),
+            usage: Some(0x0002),
+        },
+        RazerHidCandidate {
+            name: "USB Receiver".to_string(),
+            vid: RAZER_VID,
+            pid: 0x00AB,
+            usage_page: Some(0x000C),
+            usage: Some(0x0001),
+        },
+        RazerHidCandidate {
+            name: "USB Receiver".to_string(),
+            vid: RAZER_VID,
+            pid: 0x00AB,
+            usage_page: Some(0x0001),
+            usage: Some(0x0002),
+        },
+    ];
+
+    let summaries = summarize_hid_candidates(&candidates);
+
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(summaries[0].name, "Razer Basilisk V3 Pro (Wireless)");
+    assert_eq!(summaries[0].pid, 0x00AB);
+    assert_eq!(summaries[0].usages.len(), 2);
 }
