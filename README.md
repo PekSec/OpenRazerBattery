@@ -5,9 +5,9 @@ status without running Razer Synapse.
 
 This repository is currently at the initial Rust scaffold stage. The crate uses
 Rust 2024 with a minimum supported Rust version of 1.85, builds as a single
-binary, exposes the planned module layout, and includes hardware-free protocol
-tests. Real HID enumeration, battery probing, and tray integration are still to
-be implemented.
+binary, exposes the planned module layout, enumerates local Razer HID
+candidates, and includes hardware-free protocol tests. Battery probing and tray
+integration are still to be implemented.
 
 ## Toolchain
 
@@ -39,11 +39,23 @@ Running without arguments will dispatch to `tray` mode.
 
 ## Current Status
 
-- `list` prints a placeholder diagnostic message.
+- `list` enumerates Razer HID candidates and matches known mouse PIDs from
+  OpenRazer's device list.
 - `probe` prints a placeholder battery-probe message.
 - `tray` prints a placeholder tray-mode message.
-- Protocol constants, checksum helpers, report construction, and battery
-  conversion are present and covered by tests.
+- Protocol constants, checksum helpers, report construction, device catalog
+  matching, and battery conversion are present and covered by tests.
+
+## Device Data Source
+
+Known Razer mouse VID/PID entries are derived from the OpenRazer supported
+device list and mouse driver:
+
+- https://openrazer.github.io/
+- https://github.com/openrazer/openrazer
+
+The app keeps this catalog local and only probes battery-capable devices marked
+as supported in that catalog.
 
 ## Dependencies
 
