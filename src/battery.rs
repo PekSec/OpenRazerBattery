@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use crate::{
     device::{
         RazerDeviceDefinition, RazerHidCandidate, display_name_for_candidate, known_device,
@@ -25,9 +27,36 @@ pub enum BatteryStatus {
     Ok,
     DeviceNotFound,
     UnsupportedDevice,
+    AccessDenied,
     DeviceBusy,
     ProtocolError,
     TransportError,
+}
+
+impl BatteryStatus {
+    pub fn user_message(self) -> &'static str {
+        match self {
+            Self::Ok => "Battery available.",
+            Self::DeviceNotFound => "No supported Razer mouse found.",
+            Self::UnsupportedDevice => "Unsupported Razer device.",
+            Self::AccessDenied => "Device access denied.",
+            Self::DeviceBusy => "Device busy. Will retry.",
+            Self::ProtocolError => "Battery query failed.",
+            Self::TransportError => "HID transport failed.",
+        }
+    }
+
+    pub fn short_label(self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::DeviceNotFound => "not found",
+            Self::UnsupportedDevice => "unsupported",
+            Self::AccessDenied => "access denied",
+            Self::DeviceBusy => "busy",
+            Self::ProtocolError => "query failed",
+            Self::TransportError => "HID failed",
+        }
+    }
 }
 
 pub fn raw_battery_to_percentage(raw: u8) -> u8 {
@@ -46,23 +75,53 @@ pub fn unavailable_snapshot(status: BatteryStatus) -> BatterySnapshot {
 }
 
 pub fn probe_battery() -> Result<BatterySnapshot, AppError> {
+    let snapshots = probe_batteries();
+
+    if let Some(snapshot) = snapshots
+        .iter()
+        .find(|snapshot| snapshot.status == BatteryStatus::Ok)
+    {
+        return Ok(snapshot.clone());
+    }
+
+    let status = snapshots
+        .first()
+        .map(|snapshot| snapshot.status)
+        .unwrap_or(BatteryStatus::DeviceNotFound);
+
+    Err(app_error_for_status(status))
+}
+
+pub fn probe_batteries() -> Vec<BatterySnapshot> {
+    match probe_batteries_inner() {
+        Ok(snapshots) => snapshots,
+        Err(error) => vec![unavailable_snapshot(battery_status_for_error(&error))],
+    }
+}
+
+fn probe_batteries_inner() -> Result<Vec<BatterySnapshot>, AppError> {
     let transport = RazerHidTransport::new()?;
     let candidates = transport.enumerate_razer_hid_candidates()?;
     let mut unsupported_razer_seen = false;
-    let mut last_error = None;
+    let ranked_candidates = ranked_supported_battery_candidates(&candidates);
 
-    for (candidate, definition) in ranked_supported_battery_candidates(&candidates) {
-        match probe_candidate(&transport, candidate, definition) {
-            Ok(snapshot) => return Ok(snapshot),
-            Err(error @ AppError::DeviceBusy) => last_error = Some(error),
-            Err(error @ AppError::UnsupportedDevice) => last_error = Some(error),
-            Err(error @ AppError::AccessDenied) => last_error = Some(error),
-            Err(error @ AppError::HidTransport) => last_error = Some(error),
-            Err(error @ AppError::InvalidReportLength { .. })
-            | Err(error @ AppError::InvalidChecksum)
-            | Err(error @ AppError::UnexpectedResponse) => last_error = Some(error),
-            Err(error) => last_error = Some(error),
+    if !ranked_candidates.is_empty() {
+        let mut seen_devices = BTreeSet::new();
+        let mut snapshots = Vec::new();
+
+        for (candidate, definition) in &ranked_candidates {
+            if !seen_devices.insert((candidate.vid, candidate.pid)) {
+                continue;
+            }
+
+            snapshots.push(probe_ranked_device_candidates(
+                &transport,
+                &ranked_candidates,
+                definition,
+            ));
         }
+
+        return Ok(snapshots);
     }
 
     for candidate in &candidates {
@@ -75,15 +134,37 @@ pub fn probe_battery() -> Result<BatterySnapshot, AppError> {
         }
     }
 
-    if let Some(error) = last_error {
-        return Err(error);
+    if unsupported_razer_seen {
+        Ok(vec![unavailable_snapshot(BatteryStatus::UnsupportedDevice)])
+    } else {
+        Ok(vec![unavailable_snapshot(BatteryStatus::DeviceNotFound)])
+    }
+}
+
+fn probe_ranked_device_candidates(
+    transport: &RazerHidTransport,
+    ranked_candidates: &[(&RazerHidCandidate, &RazerDeviceDefinition)],
+    definition: &RazerDeviceDefinition,
+) -> BatterySnapshot {
+    let mut first_failure = None;
+
+    for (candidate, candidate_definition) in ranked_candidates {
+        if candidate_definition.vid != definition.vid || candidate_definition.pid != definition.pid
+        {
+            continue;
+        }
+
+        match probe_candidate(transport, candidate, candidate_definition) {
+            Ok(snapshot) => return snapshot,
+            Err(error) => {
+                first_failure.get_or_insert((*candidate, battery_status_for_error(&error)));
+            }
+        }
     }
 
-    if unsupported_razer_seen {
-        Err(AppError::UnsupportedDevice)
-    } else {
-        Err(AppError::NoDevice)
-    }
+    first_failure
+        .map(|(candidate, status)| unavailable_candidate_snapshot(candidate, status))
+        .unwrap_or_else(|| unavailable_snapshot(BatteryStatus::UnsupportedDevice))
 }
 
 fn probe_candidate(
@@ -112,4 +193,77 @@ fn probe_candidate(
         charging,
         status: BatteryStatus::Ok,
     })
+}
+
+fn unavailable_candidate_snapshot(
+    candidate: &RazerHidCandidate,
+    status: BatteryStatus,
+) -> BatterySnapshot {
+    BatterySnapshot {
+        device_name: display_name_for_candidate(candidate).to_string(),
+        vid: candidate.vid,
+        pid: candidate.pid,
+        percentage: None,
+        charging: None,
+        status,
+    }
+}
+
+fn battery_status_for_error(error: &AppError) -> BatteryStatus {
+    match error {
+        AppError::NoDevice => BatteryStatus::DeviceNotFound,
+        AppError::UnsupportedDevice => BatteryStatus::UnsupportedDevice,
+        AppError::AccessDenied => BatteryStatus::AccessDenied,
+        AppError::DeviceBusy => BatteryStatus::DeviceBusy,
+        AppError::InvalidReportLength { .. }
+        | AppError::InvalidChecksum
+        | AppError::UnexpectedResponse => BatteryStatus::ProtocolError,
+        AppError::HidTransport => BatteryStatus::TransportError,
+        AppError::InvalidCommand | AppError::Tray => BatteryStatus::TransportError,
+    }
+}
+
+fn app_error_for_status(status: BatteryStatus) -> AppError {
+    match status {
+        BatteryStatus::Ok => AppError::UnexpectedResponse,
+        BatteryStatus::DeviceNotFound => AppError::NoDevice,
+        BatteryStatus::UnsupportedDevice => AppError::UnsupportedDevice,
+        BatteryStatus::AccessDenied => AppError::AccessDenied,
+        BatteryStatus::DeviceBusy => AppError::DeviceBusy,
+        BatteryStatus::ProtocolError => AppError::UnexpectedResponse,
+        BatteryStatus::TransportError => AppError::HidTransport,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn app_errors_map_to_battery_statuses() {
+        assert_eq!(
+            battery_status_for_error(&AppError::NoDevice),
+            BatteryStatus::DeviceNotFound
+        );
+        assert_eq!(
+            battery_status_for_error(&AppError::UnsupportedDevice),
+            BatteryStatus::UnsupportedDevice
+        );
+        assert_eq!(
+            battery_status_for_error(&AppError::AccessDenied),
+            BatteryStatus::AccessDenied
+        );
+        assert_eq!(
+            battery_status_for_error(&AppError::DeviceBusy),
+            BatteryStatus::DeviceBusy
+        );
+        assert_eq!(
+            battery_status_for_error(&AppError::InvalidChecksum),
+            BatteryStatus::ProtocolError
+        );
+        assert_eq!(
+            battery_status_for_error(&AppError::HidTransport),
+            BatteryStatus::TransportError
+        );
+    }
 }
