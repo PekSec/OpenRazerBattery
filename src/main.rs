@@ -1,6 +1,6 @@
 use std::process::ExitCode;
 
-use razer_bat::{cli, error::AppError, tray};
+use open_razer_battery::{cli, error::AppError, tray};
 #[cfg(all(windows, not(debug_assertions)))]
 use windows::Win32::System::Console::FreeConsole;
 
